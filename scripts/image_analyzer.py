@@ -18,6 +18,7 @@ class ImageAnalyzer:
     def __init__(self, img_path):
 
         self.img = img_path
+        self.endianness = None
 
     def show_png_chunk(self, file):
         '''
@@ -63,6 +64,85 @@ class ImageAnalyzer:
 
         print("---------------------------------------------------------------------------------")
 
+    def traverse_ifd_entries(self, file, ifd_entries_count_in_integers):
+        for i in range(ifd_entries_count_in_integers) :
+
+            tag = file.read(2)
+
+            field_type_in_bytes = file.read(2)
+            field_type_in_integers = int.from_bytes(field_type_in_bytes, byteorder = self.endianness)
+
+            match field_type_in_integers : 
+                case 1 :
+                    field_type_in_string = "BYTE"
+                    field_type_size_number_of_bytes = 1
+                case 2 :
+                    field_type_in_string = "ASCII"
+                    field_type_size_number_of_bytes = 1
+                case 3 :
+                    field_type_in_string = "SHORT"
+                    field_type_size_number_of_bytes = 2
+                case 4 :
+                    field_type_in_string = "LONG"
+                    field_type_size_number_of_bytes = 4
+                case 5 :
+                    field_type_in_string = "RATIONAL"
+                    field_type_size_number_of_bytes = 8
+
+            print()
+
+            number_of_values_in_bytes = file.read(4)
+            number_of_values_in_integers = int.from_bytes(number_of_values_in_bytes, byteorder = self.endianness)
+
+            size_of_all_values = field_type_size_number_of_bytes * number_of_values_in_integers
+            value_or_offset_to_value_in_bytes = file.read(4)
+            value_or_offset_to_value_in_integers = int.from_bytes(value_or_offset_to_value_in_bytes, byteorder = self.endianness)
+
+            if size_of_all_values > 4 : 
+                position_before_reading_values = file.tell()
+                file.seek(value_or_offset_to_value_in_integers)
+                values = file.read(size_of_all_values)
+                print(values)
+
+                # Here we need to do something with the values. 
+                # Separate each value based on size of
+
+                file.seek(position_before_reading_values)
+            else : 
+                values = value_or_offset_to_value_in_bytes
+
+            print(tag, field_type_in_bytes, number_of_values_in_bytes, value_or_offset_to_value_in_bytes)
+
+            print(f"Size of {field_type_in_string} : {field_type_size_number_of_bytes}")
+            print(f"Number of values : {number_of_values_in_integers}")
+            print(f"Total size of values : {size_of_all_values}")
+    
+    def traverse_ifds(self, file, offset_to_the_first_ifd_in_integers):
+
+        offset_to_the_next_ifd_in_integers = offset_to_the_first_ifd_in_integers
+
+        while offset_to_the_next_ifd_in_integers != 0 : 
+
+            # Reset the cursor to offset to the first IFD
+            file.seek(offset_to_the_next_ifd_in_integers)
+
+            # Get the count of entries in the first IFD
+            ifd_entries_count_in_binary = file.read(2)
+            print("Number of entries in the first IFD : ")
+            print(ifd_entries_count_in_binary)
+
+            ifd_entries_count_in_integers = int.from_bytes(ifd_entries_count_in_binary, byteorder=self.endianness)
+            print(f"{ifd_entries_count_in_integers}\n")
+
+            self.traverse_ifd_entries(file, ifd_entries_count_in_integers)
+
+            offset_to_the_next_ifd_in_bytes = file.read(4)
+            print("\nOffset to the next IFD : ")
+            print(f"{offset_to_the_next_ifd_in_bytes}")
+
+            offset_to_the_next_ifd_in_integers = int.from_bytes(offset_to_the_next_ifd_in_bytes, byteorder = self.endianness)
+            print(f"{offset_to_the_next_ifd_in_integers}")
+
     def analyze_tiff_image(self):
         '''
             We open the TIFF file as binary, and display its contents
@@ -73,61 +153,45 @@ class ImageAnalyzer:
             # Identify byte order (endianness) as Little Endian (II) or Big Endian (MM)
             endianness_code = file.read(2)
             print("\n")
+            print("The type of endianness : ")
             print(endianness_code)
 
             if endianness_code == b'II':
-                endianness = "little"
+                self.endianness = "little"
             elif endianness_code == b'MM':
-                endianness = "big"
-            print(f"The type of endianness : {endianness}\n")
+                self.endianness = "big"
+            print(f"{self.endianness}\n")
             
             # Verify the Magic Number for TIF ( 42 in decimal )
             magic_number_in_bytes = file.read(2)
+            print("Magic Number : ")
             print(magic_number_in_bytes)
 
-            magic_number_in_integers = int.from_bytes(magic_number_in_bytes, byteorder=endianness)
-            print(f"Magic Number : {magic_number_in_integers}\n")
+            magic_number_in_integers = int.from_bytes(magic_number_in_bytes, byteorder=self.endianness)
+            print(f"{magic_number_in_integers}\n")
 
             assert magic_number_in_bytes == b'*\x00', 'Not a valid TIF file'
 
             # Get the bytes offset to the first IFD from the beginning of the file
-            offset_to_first_ifd_in_bytes = file.read(4)
-            print(offset_to_first_ifd_in_bytes)
+            offset_to_the_first_ifd_in_bytes = file.read(4)
+            print("Offset to the first IFD : ")
+            print(offset_to_the_first_ifd_in_bytes)
 
-            offset_to_first_ifd_in_integers = int.from_bytes(offset_to_first_ifd_in_bytes, byteorder=endianness)
-            print(f"Offset to first IFD : {offset_to_first_ifd_in_integers}\n")
+            offset_to_the_first_ifd_in_integers = int.from_bytes(offset_to_the_first_ifd_in_bytes, byteorder=self.endianness)
+            print(f"{offset_to_the_first_ifd_in_integers}\n")
 
-            # Reset the cursor to offset to the first IFD
-            file.seek(offset_to_first_ifd_in_integers)
-
-            # Get the count of entries in the first IFD
-            first_ifd_entries_count_in_binary = file.read(2)
-            print(first_ifd_entries_count_in_binary)
-
-            first_ifd_entries_count_in_integers = int.from_bytes(first_ifd_entries_count_in_binary, byteorder=endianness)
-            print(f"Number of entries in the first IFD : {first_ifd_entries_count_in_integers}\n")
-
-            for i in range(first_ifd_entries_count_in_integers) :
-                # ifd_entry_in_bytes = file.read(12)
-                # print(ifd_entry_in_bytes)
-
-                tag_type = file.read(2)
-                field_type = file.read(2)
-                number_of_values = file.read(4)
-                value_or_offset_to_value = file.read(4)
-
-                print(tag_type, field_type, number_of_values, value_or_offset_to_value)
-
-            offset_to_the_next_ifd_in_bytes = file.read(4)
-            print(f"\n{offset_to_the_next_ifd_in_bytes}")
-
-            offset_to_the_next_ifd_in_integers = int.from_bytes(offset_to_the_next_ifd_in_bytes, endianness)
-            print(f"Offset to the next IFD : {offset_to_the_next_ifd_in_integers}")
+            self.traverse_ifds(file, offset_to_the_first_ifd_in_integers)
 
             # Reset the cursor to offset to the beginning of the file
             file.seek(0)
 
-            print(f"\nThe entire byte string of the tif : {file.read()}\n")
+            print(f"\nThe entire byte string of the tif : \n")
+            print(file.read())
+
+            '''
+                TODO : 
+                Figure out what the rest of the characters are in the bytestring other than the signature and IFDs
+            '''
 
             
 
